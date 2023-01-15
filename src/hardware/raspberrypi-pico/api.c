@@ -273,10 +273,10 @@ Grouping of channels is rather arbitrary as parameters like sample rate and numb
 apply to all changes.  Analog channels do have a scale and offset, but that is applied
 without involvement of the session.
 */
-	devc->analog_groups = g_malloc0(sizeof(struct sr_channel_group *) *
-					devc->num_a_channels);
-	for (i = 0; i < devc->num_a_channels; i++) {
-		channel_name = g_strdup_printf("A%d", i);
+    devc->analog_groups = g_malloc0(sizeof(struct sr_channel_group *) *
+            devc->num_a_channels);
+    for (i = 0; i < devc->num_a_channels; i++) {
+        channel_name = g_strdup_printf("A%d", i);
         if (probe_provide_names) {
             /* get channel name from probe */
             char cmd[10];
@@ -290,37 +290,37 @@ without involvement of the session.
         /* sdi, index, type, enabled,name */
         ch = sr_channel_new(sdi, i, SR_CHANNEL_ANALOG, TRUE, channel_name);
         devc->analog_groups[i] = g_malloc0(sizeof(struct sr_channel_group));
-		devc->analog_groups[i]->name = channel_name;
+        devc->analog_groups[i]->name = channel_name;
         devc->analog_groups[i]->channels = g_slist_append(NULL, ch);
         sdi->channel_groups = g_slist_append(sdi->channel_groups, devc->analog_groups[i]);
-	}
+    }
 
-	for (i = 0; i < devc->num_d_channels; i++) {
-	    /* default: name digital channels starting at D2 to match pico board pin names */
-	    channel_name = g_strdup_printf("D%d", i + 2);
-	    if (probe_provide_names) {
-	        /* get channel name from probe */
-	        char cmd[10];
-	        sprintf(cmd, "ND%02d\n", i);
-	        num_read = send_serial_w_resp(serial, cmd, buf, sizeof(buf));
-	        if (num_read > 0) {
-	            g_free(channel_name);
-	            channel_name = g_strndup(buf, num_read);
-	        }
+    for (i = 0; i < devc->num_d_channels; i++) {
+        /* default: name digital channels starting at D2 to match pico board pin names */
+        channel_name = g_strdup_printf("D%d", i + 2);
+        if (probe_provide_names) {
+            /* get channel name from probe */
+            char cmd[10];
+            sprintf(cmd, "ND%02d\n", i);
+            num_read = send_serial_w_resp(serial, cmd, buf, sizeof(buf));
+            if (num_read > 0) {
+                g_free(channel_name);
+                channel_name = g_strndup(buf, num_read);
+            }
 
-	    }
-	    sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE, channel_name);
-	    g_free(channel_name);
-	}
+        }
+        sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE, channel_name);
+        g_free(channel_name);
+    }
 
-    //In large sample usages we get the call to receive with large transfers.
-    //Since the CDC serial implemenation can silenty lose data as it gets close to full, allocate
-    //storage for a half buffer which in a worst case scenario has 2x ratio of transmitted bytes
-    // to storage bytes.
-    //Note: The intent of making this buffer large is to prevent CDC serial buffer overflows.
-    //However, it is likely that if the host is running slow (i.e. it's a raspberry pi model 3) that it becomes
-    //compute bound and doesn't service CDC serial responses in time to not overflow the internal CDC buffers.
-    //And thus no serial buffer is large enough.  But, it's only 32K....
+    /*In large sample usages we get the call to receive with large transfers.
+    Since the CDC serial implemenation can silenty lose data as it gets close to full, allocate
+    storage for a half buffer which in a worst case scenario has 2x ratio of transmitted bytes
+     to storage bytes.
+    Note: The intent of making this buffer large is to prevent CDC serial buffer overflows.
+    However, it is likely that if the host is running slow (i.e. it's a raspberry pi model 3) that it becomes
+    compute bound and doesn't service CDC serial responses in time to not overflow the internal CDC buffers.
+    And thus no serial buffer is large enough.  But, it's only 32K.... */
 	devc->serial_buffer_size = 32000;
 	devc->buffer = NULL;
 	sr_dbg("Setting serial buffer size: %i.",
