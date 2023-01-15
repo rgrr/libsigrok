@@ -261,6 +261,12 @@ be accounted for in the packing */
 	}
 	sr_dbg("num channels a %d d %d bps %d dsb %d", num_a, num_d,
 	       devc->bytes_per_slice, devc->dig_sample_bytes);
+
+    /* check if probe provides channel names */
+    num_read = send_serial_w_resp(serial, "N?\n", buf, sizeof(buf));
+    uint8_t probe_provide_names = (num_read > 1);
+    buf[num_read] = 0;
+
 /* Each analog channel is it's own group
 Digital are just channels
 Grouping of channels is rather arbitrary as parameters like sample rate and number of samples
@@ -271,36 +277,50 @@ without involvement of the session.
 					devc->num_a_channels);
 	for (i = 0; i < devc->num_a_channels; i++) {
 		channel_name = g_strdup_printf("A%d", i);
-		ch = sr_channel_new(sdi, i, SR_CHANNEL_ANALOG, TRUE,
-				    channel_name);
-		devc->analog_groups[i] =
-		    g_malloc0(sizeof(struct sr_channel_group));
+        if (probe_provide_names) {
+            /* get channel name from probe */
+            char cmd[10];
+            sprintf(cmd, "NA%02d\n", i);
+            num_read = send_serial_w_resp(serial, cmd, buf, sizeof(buf));
+            if (num_read > 0) {
+                g_free(channel_name);
+                channel_name = g_strndup(buf, num_read);
+            }
+        }
+        /* sdi, index, type, enabled,name */
+        ch = sr_channel_new(sdi, i, SR_CHANNEL_ANALOG, TRUE, channel_name);
+        devc->analog_groups[i] = g_malloc0(sizeof(struct sr_channel_group));
 		devc->analog_groups[i]->name = channel_name;
-		devc->analog_groups[i]->channels =
-		    g_slist_append(NULL, ch);
-		sdi->channel_groups =
-		    g_slist_append(sdi->channel_groups,
-				   devc->analog_groups[i]);
+        devc->analog_groups[i]->channels = g_slist_append(NULL, ch);
+        sdi->channel_groups = g_slist_append(sdi->channel_groups, devc->analog_groups[i]);
 	}
 
-	if (devc->num_d_channels > 0) {
-		for (i = 0; i < devc->num_d_channels; i++) {
-		  /*Name digital channels starting at D2 to match pico board pin names*/
-			channel_name = g_strdup_printf("D%d", i + 2);
-			sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE,
-				       channel_name);
-			g_free(channel_name);
-		}
+	for (i = 0; i < devc->num_d_channels; i++) {
+	    /* default: name digital channels starting at D2 to match pico board pin names */
+	    channel_name = g_strdup_printf("D%d", i + 2);
+	    if (probe_provide_names) {
+	        /* get channel name from probe */
+	        char cmd[10];
+	        sprintf(cmd, "ND%02d\n", i);
+	        num_read = send_serial_w_resp(serial, cmd, buf, sizeof(buf));
+	        if (num_read > 0) {
+	            g_free(channel_name);
+	            channel_name = g_strndup(buf, num_read);
+	        }
 
+	    }
+	    sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE, channel_name);
+	    g_free(channel_name);
 	}
-	/*In large sample usages we get the call to receive with large transfers.
-	Since the CDC serial implemenation can silenty lose data as it gets close to full, allocate
-	storage for a half buffer which in a worst case scenario has 2x ratio of transmitted bytes
-	 to storage bytes. 
-	Note: The intent of making this buffer large is to prevent CDC serial buffer overflows.
-	However, it is likely that if the host is running slow (i.e. it's a raspberry pi model 3) that it becomes
-	compute bound and doesn't service CDC serial responses in time to not overflow the internal CDC buffers.
-	And thus no serial buffer is large enough.  But, it's only 32K.... */
+
+    //In large sample usages we get the call to receive with large transfers.
+    //Since the CDC serial implemenation can silenty lose data as it gets close to full, allocate
+    //storage for a half buffer which in a worst case scenario has 2x ratio of transmitted bytes
+    // to storage bytes.
+    //Note: The intent of making this buffer large is to prevent CDC serial buffer overflows.
+    //However, it is likely that if the host is running slow (i.e. it's a raspberry pi model 3) that it becomes
+    //compute bound and doesn't service CDC serial responses in time to not overflow the internal CDC buffers.
+    //And thus no serial buffer is large enough.  But, it's only 32K....
 	devc->serial_buffer_size = 32000;
 	devc->buffer = NULL;
 	sr_dbg("Setting serial buffer size: %i.",
@@ -493,7 +513,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		sr_dbg("c %d enabled %d name %s\n", ch->index, ch->enabled,
 		       ch->name);
 
-		if (ch->name[0] == 'A') {
+        if (ch->type == SR_CHANNEL_ANALOG) {
 			devc->a_chan_mask &= ~(1 << ch->index);
 			if (ch->enabled) {
 				devc->a_chan_mask |=
@@ -501,7 +521,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 				a_enabled++;
 			}
 		}
-		if (ch->name[0] == 'D') {
+        else if (ch->type == SR_CHANNEL_LOGIC) {
 			devc->d_chan_mask &= ~(1 << ch->index);
 			if (ch->enabled) {
 				devc->d_chan_mask |=
@@ -511,8 +531,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		}
 		sr_info("Channel enable masks D 0x%X A 0x%X",
 			devc->d_chan_mask, devc->a_chan_mask);
-		sprintf(tmpstr, "%c%d%d\n", ch->name[0], ch->enabled,
-			ch->index);
+        sprintf(tmpstr, "%c%d%d\n", (ch->type == SR_CHANNEL_ANALOG) ? 'A' : 'D', ch->enabled, ch->index);
 		if (send_serial_w_ack(serial, tmpstr) != SR_OK) {
 			sr_err("ERROR:Channel enable fail");
 			return SR_ERR;
